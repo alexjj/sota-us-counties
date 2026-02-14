@@ -35,7 +35,7 @@ def load_counties():
 
 
 @st.cache_resource
-def spatial_join(summits_df, counties_gdf):
+def spatial_join(summits_df, _counties_gdf):
 
     # Convert summits to GeoDataFrame
     geometry = [

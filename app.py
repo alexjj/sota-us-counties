@@ -144,7 +144,7 @@ with col2:
     # Add summit markers with clustering
     cluster = MarkerCluster().add_to(m)
     for _, summit in filtered.iterrows():
-        color = "blue" if summit["Summit"] == selected_summit else "red"
+        color = "blue" if summit["SummitCode"] == selected_summit else "red"
         folium.CircleMarker(
             location=[summit["Latitude"], summit["Longitude"]],
             radius=6,
@@ -153,5 +153,6 @@ with col2:
             fill_opacity=0.7,
             popup=f"<b>{summit['SummitName']}</b><br>Code: {summit['SummitCode']}<br>County: {summit['CountyFull']}"
         ).add_to(cluster)
+
 
     st_folium(m, width=800, height=600)

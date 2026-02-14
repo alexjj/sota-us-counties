@@ -8,7 +8,6 @@ import json
 # ---------------------------------------------------
 # CONFIG
 # ---------------------------------------------------
-
 st.set_page_config(
     page_title="SOTA USA County Explorer",
     layout="wide",
@@ -20,7 +19,6 @@ st.caption("Explore US SOTA summits and the counties they fall within")
 # ---------------------------------------------------
 # STATE FIPS → ABBREVIATION MAP
 # ---------------------------------------------------
-
 STATE_FIPS = {
     "01": "AL","02": "AK","04": "AZ","05": "AR","06": "CA","08": "CO",
     "09": "CT","10": "DE","11": "DC","12": "FL","13": "GA","15": "HI",
@@ -36,7 +34,6 @@ STATE_FIPS = {
 # ---------------------------------------------------
 # LOAD DATA
 # ---------------------------------------------------
-
 @st.cache_data
 def load_summits():
     df = pd.read_csv("w-summits.csv")
@@ -44,7 +41,6 @@ def load_summits():
     df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
     df = df.dropna(subset=["Longitude", "Latitude"])
     return df
-
 
 @st.cache_resource
 def load_counties():
@@ -56,13 +52,9 @@ def load_counties():
 
     return counties
 
-
 @st.cache_resource
 def spatial_join(summits_df, _counties_gdf):
-
-    geometry = [
-        Point(xy) for xy in zip(summits_df["Longitude"], summits_df["Latitude"])
-    ]
+    geometry = [Point(xy) for xy in zip(summits_df["Longitude"], summits_df["Latitude"])]
 
     summits_gdf = gpd.GeoDataFrame(
         summits_df,
@@ -79,10 +71,7 @@ def spatial_join(summits_df, _counties_gdf):
 
     # Convert FIPS → state abbreviation
     joined["StateAbbr"] = joined["STATE"].map(STATE_FIPS)
-
-    joined["CountyFull"] = (
-        joined["NAME"] + " County, " + joined["StateAbbr"]
-    )
+    joined["CountyFull"] = joined["NAME"] + " County, " + joined["StateAbbr"]
 
     grouped = (
         joined.groupby("SummitCode")
@@ -100,11 +89,9 @@ def spatial_join(summits_df, _counties_gdf):
 
     return grouped
 
-
 # ---------------------------------------------------
-# DATA LOAD
+# LOAD DATA
 # ---------------------------------------------------
-
 summits_df = load_summits()
 counties_gdf = load_counties()
 summits = spatial_join(summits_df, counties_gdf)
@@ -112,61 +99,39 @@ summits = spatial_join(summits_df, counties_gdf)
 # ---------------------------------------------------
 # SIDEBAR FILTERS
 # ---------------------------------------------------
-
 with st.sidebar:
     st.header("Filters")
-
     search_text = st.text_input("Search summit")
 
-    all_counties = sorted(
-        {
-            c.strip()
-            for row in summits["CountyFull"].dropna()
-            for c in row.split(",")
-        }
-    )
+    all_counties = sorted({
+        c.strip() for row in summits["CountyFull"].dropna() for c in row.split(",")
+    })
 
-    selected_county = st.selectbox(
-        "County",
-        ["All"] + all_counties
-    )
-
+    selected_county = st.selectbox("County", ["All"] + all_counties)
 
 # ---------------------------------------------------
 # APPLY FILTERS
 # ---------------------------------------------------
-
 filtered = summits.copy()
-
 if search_text:
     filtered = filtered[
-        filtered["SummitName"].str.contains(search_text, case=False)
-        | filtered["SummitCode"].str.contains(search_text, case=False)
+        filtered["SummitName"].str.contains(search_text, case=False) |
+        filtered["SummitCode"].str.contains(search_text, case=False)
     ]
 
 if selected_county != "All":
-    filtered = filtered[
-        filtered["CountyFull"].str.contains(selected_county)
-    ]
-
-
-# ---------------------------------------------------
-# METRICS
-# ---------------------------------------------------
+    filtered = filtered[filtered["CountyFull"].str.contains(selected_county)]
 
 st.metric("Visible Summits", len(filtered))
 
 # ---------------------------------------------------
-# LAYOUT
+# TABLE + MAP LAYOUT
 # ---------------------------------------------------
-
 col1, col2 = st.columns([1, 2])
 
 # ---------------- TABLE ----------------
-
 with col1:
     st.subheader("Summit List")
-
     display_df = (
         filtered[["SummitCode", "SummitName", "CountyFull"]]
         .rename(columns={
@@ -178,43 +143,67 @@ with col1:
         .reset_index(drop=True)
     )
 
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        height=600
-    )
-
+    # Use selection to highlight map
+    selected_index = st.experimental_data_editor(display_df, key="table_editor").index
+    selected_code = None
+    if len(selected_index) == 1:
+        selected_code = display_df.iloc[selected_index[0]]["Summit"]
 
 # ---------------- MAP ----------------
-
 with col2:
     st.subheader("Map")
-
     if not filtered.empty:
 
+        # Color for highlighting selected summit
+        filtered["Color"] = filtered["SummitCode"].apply(
+            lambda x: [0, 150, 255, 255] if x == selected_code else [200, 30, 0, 180]
+        )
+
+        # Summit layer (scatterplot)
         summit_layer = pdk.Layer(
             "ScatterplotLayer",
             data=filtered,
             get_position="[Longitude, Latitude]",
-            get_radius=800,
-            get_fill_color="[200, 30, 0]",
+            get_radius=600,
+            get_fill_color="Color",
             pickable=True,
+            auto_highlight=True,
         )
 
-        # OpenTopoMap tile layer
+        # County boundaries layer
+        county_layer = pdk.Layer(
+            "GeoJsonLayer",
+            data=counties_gdf,
+            stroked=True,
+            filled=False,
+            get_line_color=[80, 80, 80, 120],
+            get_line_width=2,
+            pickable=False,
+        )
+
+        # OpenTopoMap tile
         tile_layer = pdk.Layer(
             "TileLayer",
             data="https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
             min_zoom=0,
             max_zoom=19,
-            tile_size=256,
+            tile_size=256
         )
 
-        view_state = pdk.ViewState(
-            latitude=filtered["Latitude"].mean(),
-            longitude=filtered["Longitude"].mean(),
-            zoom=6,
-        )
+        # Map view
+        if selected_code:
+            summit = filtered[filtered["SummitCode"] == selected_code].iloc[0]
+            view_state = pdk.ViewState(
+                latitude=summit["Latitude"],
+                longitude=summit["Longitude"],
+                zoom=10,
+            )
+        else:
+            view_state = pdk.ViewState(
+                latitude=filtered["Latitude"].mean(),
+                longitude=filtered["Longitude"].mean(),
+                zoom=6,
+            )
 
         tooltip = {
             "html": """
@@ -224,13 +213,13 @@ with col2:
             """
         }
 
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[tile_layer, summit_layer],
-                initial_view_state=view_state,
-                tooltip=tooltip,
-                map_style=None,  # IMPORTANT
-            )
+        deck = pdk.Deck(
+            layers=[tile_layer, county_layer, summit_layer],
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            map_style=None,
         )
+
+        st.pydeck_chart(deck)
     else:
         st.info("No summits match filters.")

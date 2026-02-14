@@ -5,6 +5,7 @@ from shapely.geometry import Point
 import json
 from streamlit_folium import st_folium
 import folium
+from folium.plugins import MarkerCluster
 
 # ---------------------------------------------------
 # CONFIG
@@ -104,42 +105,46 @@ if selected_county != "All":
 st.metric("Visible Summits", len(filtered))
 
 # ---------------------------------------------------
-# TABLE + MAP
+# LAYOUT
 # ---------------------------------------------------
 col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("Summit List")
     display_df = filtered[["SummitCode", "SummitName", "CountyFull"]].rename(
-        columns={"SummitCode":"Summit","SummitName":"Name","CountyFull":"County"}
+        columns={"SummitCode": "Summit", "SummitName": "Name", "CountyFull": "County"}
     ).sort_values("Name").reset_index(drop=True)
 
-    # Select summit to zoom map
-    selected_summit_code = st.selectbox("Click to zoom map", [""] + display_df["Summit"].tolist())
+    # Use AgGrid or st.dataframe click workaround
+    selected_summit = st.selectbox("Click summit to zoom map", [""] + display_df["Summit"].tolist())
 
 with col2:
     st.subheader("Map")
-    # Center map on selected summit or average location
-    if selected_summit_code:
-        row = display_df[display_df["Summit"] == selected_summit_code].iloc[0]
+    # Determine map center
+    if selected_summit:
+        row = display_df[display_df["Summit"] == selected_summit].iloc[0]
         map_center = [row["Latitude"], row["Longitude"]]
         zoom = 10
-    else:
+    elif not filtered.empty:
         map_center = [filtered["Latitude"].mean(), filtered["Longitude"].mean()]
         zoom = 5
+    else:
+        map_center = [39.8283, -98.5795]  # Center of continental USA
+        zoom = 4
 
     m = folium.Map(location=map_center, zoom_start=zoom, tiles="OpenTopoMap")
 
     # Add county boundaries
     folium.GeoJson(
         counties_gdf,
-        style_function=lambda x: {"color":"gray","weight":1,"fill":False},
+        style_function=lambda x: {"color": "gray", "weight": 1, "fill": False},
         name="Counties"
     ).add_to(m)
 
-    # Add summit markers with popups
+    # Add summit markers with clustering
+    cluster = MarkerCluster().add_to(m)
     for _, summit in filtered.iterrows():
-        color = "blue" if summit["SummitCode"] == selected_summit_code else "red"
+        color = "blue" if summit["Summit"] == selected_summit else "red"
         folium.CircleMarker(
             location=[summit["Latitude"], summit["Longitude"]],
             radius=6,
@@ -147,6 +152,6 @@ with col2:
             fill=True,
             fill_opacity=0.7,
             popup=f"<b>{summit['SummitName']}</b><br>Code: {summit['SummitCode']}<br>County: {summit['CountyFull']}"
-        ).add_to(m)
+        ).add_to(cluster)
 
     st_folium(m, width=800, height=600)

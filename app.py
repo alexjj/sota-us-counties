@@ -22,14 +22,14 @@ def load_summits():
     return df
 
 
-@st.cache_data
+@st.cache_resource
 def load_counties():
-    counties = gpd.read_file("counties.json")
+    counties = gpd.read_file("counties.json", encoding="latin1")
     counties = counties.to_crs("EPSG:4326")
     return counties
 
 
-@st.cache_data
+@st.cache_resource
 def spatial_join(summits_df, counties_gdf):
 
     # Convert summits to GeoDataFrame

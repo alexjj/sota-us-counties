@@ -186,6 +186,16 @@ with col1:
 
 
 # ---------------- MAP ----------------
+county_layer = pdk.Layer(
+    "GeoJsonLayer",
+    data=counties_gdf,
+    stroked=True,
+    filled=False,
+    get_line_color=[80, 80, 80, 120],
+    get_line_width=2,
+    pickable=False,
+)
+
 
 with col2:
     st.subheader("Map")
@@ -226,10 +236,10 @@ with col2:
 
         st.pydeck_chart(
             pdk.Deck(
-                layers=[tile_layer, summit_layer],
+                layers=[tile_layer, county_layer, summit_layer],
                 initial_view_state=view_state,
                 tooltip=tooltip,
-                map_style=None,  # IMPORTANT
+                map_style=None,
             )
         )
     else:

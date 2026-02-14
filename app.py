@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
@@ -24,9 +25,12 @@ def load_summits():
 
 @st.cache_resource
 def load_counties():
-    counties = gpd.read_file("counties.json", encoding="latin1",
-        engine="fiona")
-    counties = counties.to_crs("EPSG:4326")
+    with open("counties.json", "r", encoding="latin1") as f:
+        data = json.load(f)
+
+    counties = gpd.GeoDataFrame.from_features(data["features"])
+    counties.set_crs("EPSG:4326", inplace=True)
+
     return counties
 
 

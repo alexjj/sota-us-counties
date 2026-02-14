@@ -1,12 +1,37 @@
 import streamlit as st
-import json
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
 import pydeck as pdk
+import json
 
-st.set_page_config(layout="wide")
-st.title("🇺🇸 SOTA USA Summits by County")
+# ---------------------------------------------------
+# CONFIG
+# ---------------------------------------------------
+
+st.set_page_config(
+    page_title="SOTA USA County Explorer",
+    layout="wide",
+)
+
+st.title("🇺🇸 SOTA USA County Explorer")
+st.caption("Explore US SOTA summits and the counties they fall within")
+
+# ---------------------------------------------------
+# STATE FIPS → ABBREVIATION MAP
+# ---------------------------------------------------
+
+STATE_FIPS = {
+    "01": "AL","02": "AK","04": "AZ","05": "AR","06": "CA","08": "CO",
+    "09": "CT","10": "DE","11": "DC","12": "FL","13": "GA","15": "HI",
+    "16": "ID","17": "IL","18": "IN","19": "IA","20": "KS","21": "KY",
+    "22": "LA","23": "ME","24": "MD","25": "MA","26": "MI","27": "MN",
+    "28": "MS","29": "MO","30": "MT","31": "NE","32": "NV","33": "NH",
+    "34": "NJ","35": "NM","36": "NY","37": "NC","38": "ND","39": "OH",
+    "40": "OK","41": "OR","42": "PA","44": "RI","45": "SC","46": "SD",
+    "47": "TN","48": "TX","49": "UT","50": "VT","51": "VA","53": "WA",
+    "54": "WV","55": "WI","56": "WY"
+}
 
 # ---------------------------------------------------
 # LOAD DATA
@@ -15,10 +40,8 @@ st.title("🇺🇸 SOTA USA Summits by County")
 @st.cache_data
 def load_summits():
     df = pd.read_csv("w-summits.csv")
-
     df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
     df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
-
     df = df.dropna(subset=["Longitude", "Latitude"])
     return df
 
@@ -37,7 +60,6 @@ def load_counties():
 @st.cache_resource
 def spatial_join(summits_df, _counties_gdf):
 
-    # Convert summits to GeoDataFrame
     geometry = [
         Point(xy) for xy in zip(summits_df["Longitude"], summits_df["Latitude"])
     ]
@@ -48,20 +70,20 @@ def spatial_join(summits_df, _counties_gdf):
         crs="EPSG:4326"
     )
 
-    # Spatial join (intersects handles boundary case)
     joined = gpd.sjoin(
         summits_gdf,
-        counties_gdf,
+        _counties_gdf,
         how="left",
         predicate="intersects"
     )
 
-    # Build readable county + state name
+    # Convert FIPS → state abbreviation
+    joined["StateAbbr"] = joined["STATE"].map(STATE_FIPS)
+
     joined["CountyFull"] = (
-        joined["NAME"] + " County, " + joined["STATE"]
+        joined["NAME"] + " County, " + joined["StateAbbr"]
     )
 
-    # Aggregate counties per summit
     grouped = (
         joined.groupby("SummitCode")
         .agg({
@@ -80,7 +102,7 @@ def spatial_join(summits_df, _counties_gdf):
 
 
 # ---------------------------------------------------
-# LOAD + JOIN
+# DATA LOAD
 # ---------------------------------------------------
 
 summits_df = load_summits()
@@ -91,30 +113,30 @@ summits = spatial_join(summits_df, counties_gdf)
 # SIDEBAR FILTERS
 # ---------------------------------------------------
 
-st.sidebar.header("Filters")
+with st.sidebar:
+    st.header("Filters")
 
-search_text = st.sidebar.text_input("Search summit name or code")
+    search_text = st.text_input("Search summit")
 
-# Extract unique counties
-all_counties = sorted(
-    {
-        c.strip()
-        for row in summits["CountyFull"].dropna()
-        for c in row.split(",")
-    }
-)
+    all_counties = sorted(
+        {
+            c.strip()
+            for row in summits["CountyFull"].dropna()
+            for c in row.split(",")
+        }
+    )
 
-selected_county = st.sidebar.selectbox(
-    "Filter by County",
-    ["All"] + all_counties
-)
+    selected_county = st.selectbox(
+        "County",
+        ["All"] + all_counties
+    )
 
-min_points = st.sidebar.slider(
-    "Minimum SOTA Points",
-    min_value=0,
-    max_value=int(summits["Points"].max()),
-    value=0
-)
+    min_points = st.slider(
+        "Minimum Points",
+        0,
+        int(summits["Points"].max()),
+        0
+    )
 
 # ---------------------------------------------------
 # APPLY FILTERS
@@ -136,6 +158,12 @@ if selected_county != "All":
 filtered = filtered[filtered["Points"] >= min_points]
 
 # ---------------------------------------------------
+# METRICS
+# ---------------------------------------------------
+
+st.metric("Visible Summits", len(filtered))
+
+# ---------------------------------------------------
 # LAYOUT
 # ---------------------------------------------------
 
@@ -145,11 +173,11 @@ col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("Summit List")
-    st.write(f"{len(filtered)} summits")
 
     st.dataframe(
         filtered.sort_values("SummitName"),
-        use_container_width=True
+        use_container_width=True,
+        height=600
     )
 
 # ---------------- MAP ----------------
@@ -163,7 +191,8 @@ with col2:
             "ScatterplotLayer",
             data=filtered,
             get_position="[Longitude, Latitude]",
-            get_radius=600,
+            get_radius=800,
+            get_fill_color="[Points * 20, 100, 180]",
             pickable=True,
         )
 
@@ -180,7 +209,6 @@ with col2:
                 Points: {Points}<br/>
                 County: {CountyFull}
             """,
-            "style": {"backgroundColor": "steelblue", "color": "white"},
         }
 
         st.pydeck_chart(
@@ -190,6 +218,5 @@ with col2:
                 tooltip=tooltip,
             )
         )
-
     else:
         st.info("No summits match filters.")

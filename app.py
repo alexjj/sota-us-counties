@@ -24,7 +24,8 @@ def load_summits():
 
 @st.cache_resource
 def load_counties():
-    counties = gpd.read_file("counties.json", encoding="latin1")
+    counties = gpd.read_file("counties.json", encoding="latin1",
+        engine="fiona")
     counties = counties.to_crs("EPSG:4326")
     return counties
 

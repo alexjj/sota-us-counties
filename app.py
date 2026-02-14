@@ -131,12 +131,6 @@ with st.sidebar:
         ["All"] + all_counties
     )
 
-    min_points = st.slider(
-        "Minimum Points",
-        0,
-        int(summits["Points"].max()),
-        0
-    )
 
 # ---------------------------------------------------
 # APPLY FILTERS
@@ -155,7 +149,6 @@ if selected_county != "All":
         filtered["CountyFull"].str.contains(selected_county)
     ]
 
-filtered = filtered[filtered["Points"] >= min_points]
 
 # ---------------------------------------------------
 # METRICS
@@ -174,11 +167,23 @@ col1, col2 = st.columns([1, 2])
 with col1:
     st.subheader("Summit List")
 
+    display_df = (
+        filtered[["SummitCode", "SummitName", "CountyFull"]]
+        .rename(columns={
+            "SummitCode": "Summit",
+            "SummitName": "Name",
+            "CountyFull": "County"
+        })
+        .sort_values("Name")
+        .reset_index(drop=True)
+    )
+
     st.dataframe(
-        filtered.sort_values("SummitName"),
+        display_df,
         use_container_width=True,
         height=600
     )
+
 
 # ---------------- MAP ----------------
 
@@ -187,13 +192,22 @@ with col2:
 
     if not filtered.empty:
 
-        layer = pdk.Layer(
+        summit_layer = pdk.Layer(
             "ScatterplotLayer",
             data=filtered,
             get_position="[Longitude, Latitude]",
             get_radius=800,
-            get_fill_color="[Points * 20, 100, 180]",
+            get_fill_color="[200, 30, 0]",
             pickable=True,
+        )
+
+        # OpenTopoMap tile layer
+        tile_layer = pdk.Layer(
+            "TileLayer",
+            data="https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+            min_zoom=0,
+            max_zoom=19,
+            tile_size=256,
         )
 
         view_state = pdk.ViewState(
@@ -206,16 +220,16 @@ with col2:
             "html": """
                 <b>{SummitName}</b><br/>
                 Code: {SummitCode}<br/>
-                Points: {Points}<br/>
                 County: {CountyFull}
-            """,
+            """
         }
 
         st.pydeck_chart(
             pdk.Deck(
-                layers=[layer],
+                layers=[tile_layer, summit_layer],
                 initial_view_state=view_state,
                 tooltip=tooltip,
+                map_style=None,  # IMPORTANT
             )
         )
     else:
